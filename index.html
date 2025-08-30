@@ -1,39 +1,29 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8">
-  <title>멀티 종목 차트 (4개 x 3페이지)</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="style.css">
-
-  <!-- Chart.js (https 사용) -->
+  <meta charset="utf-8" />
+  <title>6개월 차트 + 관련 기사</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="style.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
   <header>
-    <h1>멀티 종목 차트</h1>
+    <h1>6개월 차트 + 관련 기사</h1>
     <div class="toolbar">
-      <div class="timeframe">
-        <label for="tf">봉 간격</label>
-        <select id="tf">
-          <option value="DAILY" selected>일봉</option>
-          <option value="WEEKLY">주봉</option>
-          <option value="MONTHLY">월봉</option>
-        </select>
-      </div>
       <div class="pages">
         <button data-page="1" class="page-btn active">1</button>
         <button data-page="2" class="page-btn">2</button>
         <button data-page="3" class="page-btn">3</button>
       </div>
+      <div class="hint">※ 데이터는 6시간 캐시 · 요청은 안전하게 스로틀</div>
     </div>
   </header>
 
-  <!-- 카드 4개가 들어갈 그리드 -->
   <main id="grid" class="grid"></main>
 
   <footer>
-    <p class="note">※ API 무료호출 제한 방지를 위해 <strong>로컬 캐시(6시간)</strong>와 <strong>요청 스로틀(최대 4회/분)</strong>이 적용됩니다.</p>
+    <p class="note">종목·페이지를 바꿔도 6시간 내엔 캐시로 즉시 표시됩니다.</p>
   </footer>
 
   <script src="app.js"></script>
