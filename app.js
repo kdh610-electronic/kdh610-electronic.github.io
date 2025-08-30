@@ -97,6 +97,8 @@ function setSymbol(input){
     <a target="_blank" href="${naverQuote}">국내</a>`;
   buildNewsTable(sym);
   renderChart(sym);
+
+  renderWatchlist();
 }
 
 /* ========= 탭 ========= */
