@@ -85,6 +85,7 @@ function renderChart(sym){
     symbol: sym,
     interval: "D",
     theme: "dark",
+    timeframe: "6M",
     style: "1",            // 1=캔들
     locale: "kr",
     autosize: true,
