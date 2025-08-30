@@ -2,22 +2,39 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8">
-  <title>1년 일봉 차트</title>
+  <title>멀티 종목 차트 (4개 x 3페이지)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="style.css">
-  <!-- Chart.js CDN (https 꼭) -->
+
+  <!-- Chart.js (https 사용) -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-  <h1>1년 일봉 차트</h1>
+  <header>
+    <h1>멀티 종목 차트</h1>
+    <div class="toolbar">
+      <div class="timeframe">
+        <label for="tf">봉 간격</label>
+        <select id="tf">
+          <option value="DAILY" selected>일봉</option>
+          <option value="WEEKLY">주봉</option>
+          <option value="MONTHLY">월봉</option>
+        </select>
+      </div>
+      <div class="pages">
+        <button data-page="1" class="page-btn active">1</button>
+        <button data-page="2" class="page-btn">2</button>
+        <button data-page="3" class="page-btn">3</button>
+      </div>
+    </div>
+  </header>
 
-  <!-- 차트가 그려질 캔버스 -->
-  <canvas id="chart" width="800" height="400"></canvas>
+  <!-- 카드 4개가 들어갈 그리드 -->
+  <main id="grid" class="grid"></main>
 
-  <div class="button-group">
-    <button onclick="loadData('DAILY')">일봉</button>
-    <button onclick="loadData('WEEKLY')">주봉</button>
-    <button onclick="loadData('MONTHLY')">월봉</button>
-  </div>
+  <footer>
+    <p class="note">※ API 무료호출 제한 방지를 위해 <strong>로컬 캐시(6시간)</strong>와 <strong>요청 스로틀(최대 4회/분)</strong>이 적용됩니다.</p>
+  </footer>
 
   <script src="app.js"></script>
 </body>
