@@ -2,48 +2,159 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <title>Six Months — Minimal Stock Viewer</title>
+  <title>내 주식 대시보드</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="style.css" />
-  <!-- TradingView Advanced Chart -->
+  <!-- TradingView Advanced Chart (API 키 불필요) -->
   <script src="https://s3.tradingview.com/tv.js"></script>
 </head>
 <body>
-  <main class="wrap">
-    <header class="hero glass">
-      <div class="brand">
-        <div class="mark">▦</div>
-        <h1>Six Months</h1>
-      </div>
-      <p class="sub">심볼 하나, 6개월만. 미니멀한 차트 뷰어.</p>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">📈</div>
+      <div class="title">내 주식 대시보드</div>
+    </div>
 
-      <div class="symbolbar">
-        <input id="symbolInput" type="text" placeholder="예: AAPL · TSLA · 005930 또는 KRX:005930" />
-        <button id="applyBtn" class="btn">보기</button>
-      </div>
+    <div class="searchbar">
+      <input id="symbolInput" type="text" placeholder="심볼 입력: AAPL, TSLA, 005930, KRX:005930" />
+      <button id="applyBtn" class="btn">적용</button>
+    </div>
+  </header>
 
-      <div class="chips">
-        <button class="chip" data-sym="AAPL">AAPL</button>
-        <button class="chip" data-sym="MSFT">MSFT</button>
-        <button class="chip" data-sym="NVDA">NVDA</button>
-        <button class="chip" data-sym="TSLA">TSLA</button>
-        <button class="chip" data-sym="KRX:005930">삼성전자</button>
-        <button class="chip" data-sym="KRX:000660">하이닉스</button>
-      </div>
-    </header>
-
-    <section class="card chart-card glass">
-      <div class="card-head">
+  <main class="layout">
+    <!-- 좌측: 메인 차트 -->
+    <section class="panel chart-panel">
+      <div class="panel-header">
         <h2 id="activeSymbol">AAPL</h2>
-        <div class="hint">최근 6개월 · 일봉</div>
+        <div class="links" id="quickLinks"></div>
       </div>
-      <div id="chartContainer" class="chart-box"><!-- TV chart mounts here --></div>
+
+      <div id="chartContainer" class="chart-container"><!-- TV 차트 --></div>
+
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="watchlist">관심목록</button>
+        <button class="tab-btn" data-tab="screener">스케리너</button>
+        <button class="tab-btn" data-tab="calendar">경제지표</button>
+      </div>
+
+      <div class="tab-contents">
+        <!-- 관심목록 -->
+        <div id="tab-watchlist" class="tab-content active">
+          <div class="watch-pages">
+            <button class="watch-page active" data-list="us-tech">미국 Tech</button>
+            <button class="watch-page" data-list="us-semi">미국 반도체</button>
+            <button class="watch-page" data-list="kr-large">한국 대형주</button>
+          </div>
+          <ul id="watchlist" class="watchlist"></ul>
+        </div>
+
+        <!-- 스크리너 -->
+        <div id="tab-screener" class="tab-content">
+          <div class="widget-wrap">
+            <div id="screenerMount" class="widget-mount"></div>
+          </div>
+        </div>
+
+        <!-- 경제지표 -->
+        <div id="tab-calendar" class="tab-content">
+          <div class="widget-wrap">
+            <div id="calendarMount" class="widget-mount"></div>
+          </div>
+        </div>
+      </div>
     </section>
 
-    <footer class="foot">
-      <div>© 2025 Six Months · 교육/연습용 · 투자 조언 아님</div>
-    </footer>
+    <!-- 우측: 도구 + 뉴스 테이블 + 자료실 + 암호화 보관함 -->
+    <aside class="panel side-panel">
+      <div class="tool-card">
+        <h3>포지션 사이징 계산기</h3>
+        <div class="form">
+          <label>계좌 규모(₩ 또는 $)</label>
+          <input id="accSize" type="number" placeholder="예: 10000000" />
+          <label>리스크 %</label>
+          <input id="riskPct" type="number" placeholder="예: 1" />
+          <label>진입가</label>
+          <input id="entryPrice" type="number" placeholder="예: 100" />
+          <label>손절가</label>
+          <input id="stopPrice" type="number" placeholder="예: 95" />
+          <button id="calcBtn" class="btn">계산</button>
+        </div>
+        <div class="result" id="posResult">
+          <div>허용 리스크 금액: -</div>
+          <div>1주당 리스크: -</div>
+          <div>매수 수량(최대): -</div>
+          <div>포지션 금액(대략): -</div>
+        </div>
+      </div>
+
+      <div class="tool-card">
+        <h3>평단가 계산기</h3>
+        <div class="grid-2">
+          <label>가격1</label><input id="p1" type="number" placeholder="예: 100">
+          <label>수량1</label><input id="q1" type="number" placeholder="예: 5">
+          <label>가격2</label><input id="p2" type="number" placeholder="예: 90">
+          <label>수량2</label><input id="q2" type="number" placeholder="예: 7">
+        </div>
+        <button id="avgBtn" class="btn">평단 계산</button>
+        <div class="result" id="avgResult">평단가: -</div>
+      </div>
+
+      <!-- 뉴스 테이블 -->
+      <div class="tool-card">
+        <h3>관련 뉴스/정보 (심볼별)</h3>
+        <table class="news-table">
+          <thead>
+            <tr><th>분류</th><th>바로가기</th></tr>
+          </thead>
+          <tbody id="newsTableBody"></tbody>
+        </table>
+      </div>
+
+      <!-- 크롤링 자료실 -->
+      <div class="tool-card">
+        <h3>크롤링 자료 모음</h3>
+        <table class="res-table">
+          <tbody>
+            <tr><td>robots.txt 규칙</td><td><a target="_blank" rel="noopener" href="https://developers.google.com/search/docs/crawling-indexing/robots/intro?hl=ko">가이드</a></td></tr>
+            <tr><td>Sitemap 프로토콜</td><td><a target="_blank" rel="noopener" href="https://www.sitemaps.org/protocol.html">공식 문서</a></td></tr>
+            <tr><td>CSS 선택자 치트시트</td><td><a target="_blank" rel="noopener" href="https://developer.mozilla.org/ko/docs/Web/CSS/CSS_selectors">MDN</a></td></tr>
+            <tr><td>HTTP 상태코드</td><td><a target="_blank" rel="noopener" href="https://developer.mozilla.org/ko/docs/Web/HTTP/Status">MDN</a></td></tr>
+            <tr><td>요청 간격/레이트 리밋</td><td><a target="_blank" rel="noopener" href="https://developer.mozilla.org/ko/docs/Web/HTTP/Headers/Retry-After">Retry-After 헤더</a></td></tr>
+            <tr><td>User-Agent / 헤더</td><td><a target="_blank" rel="noopener" href="https://developer.mozilla.org/ko/docs/Web/HTTP/Headers/User-Agent">MDN</a></td></tr>
+            <tr><td>크롤링 법적 이슈</td><td><a target="_blank" rel="noopener" href="https://www.ftc.gov/business-guidance/blog/2024/04/web-scraping-guidance">참고 가이드(영문)</a></td></tr>
+          </tbody>
+        </table>
+        <div class="muted small">※ 각 사이트의 이용약관·robots 정책 준수 권장</div>
+      </div>
+
+      <!-- 🔐 암호화 코드 보관함 -->
+      <div class="tool-card">
+        <h3>🔐 암호화 코드 보관함 (매일 00:00 자동 갱신)</h3>
+        <div class="form">
+          <label>가공 정보(원문)</label>
+          <textarea id="rawInput" rows="5" placeholder="이곳에 오늘 수집/가공한 텍스트를 넣으세요."></textarea>
+
+          <label>비밀번호</label>
+          <input id="encPassword" type="password" placeholder="암호화에 사용할 비밀번호" />
+
+          <div class="grid-2">
+            <button id="encryptBtn" class="btn">암호화 & 저장</button>
+            <button id="decryptBtn" class="btn">복호화</button>
+          </div>
+
+          <label>암호화 코드 (저장/백업용)</label>
+          <textarea id="encOutput" rows="4" readonly placeholder="여기에 암호화된 코드가 생성됩니다."></textarea>
+          <div class="muted small" id="encStatus">상태: 대기</div>
+          <div class="muted small">다음 자동 갱신까지: <span id="countdown">계산 중…</span></div>
+        </div>
+      </div>
+    </aside>
   </main>
+
+  <footer class="footer">
+    <div>※ 본 사이트는 교육/연습용이며 투자 조언을 제공하지 않습니다.</div>
+    <div>© 2025 My Stock Dashboard</div>
+  </footer>
 
   <script src="app.js"></script>
 </body>
