@@ -9,69 +9,53 @@ const WATCHLISTS = {
 
 let currentListKey = "us-tech";
 let currentSymbol = DEFAULT_SYMBOL;
-let tvWidget = null;
 
-/* ========= DOM 헬퍼 ========= */
+/* ========= DOM ========= */
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
-/* ========= 심볼 정규화 =========
-   - 'KRX:005930' 유지
-   - '005930' -> 'KRX:005930'
-   - 'aapl' -> 'AAPL' */
+/* ========= 심볼 정규화 ========= */
 function normalizeSymbol(input){
   if(!input) return DEFAULT_SYMBOL;
   let s = input.trim();
   if (/^KRX:/i.test(s)) return "KRX:" + s.split(":")[1].toUpperCase();
-  if (/^\d{6}$/.test(s)) return "KRX:" + s; // 한국 6자리 종목코드
+  if (/^\d{6}$/.test(s)) return "KRX:" + s; // 한국 6자리 코드 -> KRX 접두사
   return s.toUpperCase();
 }
 
-/* ========= 링크 빌더 ========= */
+/* ========= 빠른 링크 / 뉴스 테이블 ========= */
 function linkSet(sym){
-  const plain = sym.replace(/^KRX:/, "");
+  const plain = sym.replace(/^KRX:/,"");
   const isKR = /^KRX:/.test(sym);
 
   const google = `https://news.google.com/search?q=${encodeURIComponent(sym + " stock")}&hl=ko&gl=KR&ceid=KR:ko`;
-  const yahoo  = isKR
+  const yahooQuote = isKR
     ? `https://finance.yahoo.com/quote/${encodeURIComponent(plain)}.KS`
     : `https://finance.yahoo.com/quote/${encodeURIComponent(sym)}`;
-  const naver  = isKR
+  const naverQuote = isKR
     ? `https://finance.naver.com/item/main.nhn?code=${encodeURIComponent(plain)}`
     : `https://search.naver.com/search.naver?where=news&query=${encodeURIComponent(sym + " 주가")}`;
 
-  return [
-    { label: "Google 뉴스", href: google },
-    { label: "Yahoo Finance", href: yahoo },
-    { label: "네이버", href: naver }
-  ];
-}
-function newsLinks(sym){
-  // 빠른 접근 링크 모음 (테이블 대신 리스트)
-  const google = `https://news.google.com/search?q=${encodeURIComponent(sym + " stock")}&hl=ko&gl=KR&ceid=KR:ko`;
-  const yahoo  = `https://finance.yahoo.com/quote/${encodeURIComponent(sym.replace(/^KRX:/,"") + (/^KRX:/.test(sym)?".KS":""))}/news`;
-  const naver  = /^KRX:/.test(sym)
-    ? `https://finance.naver.com/item/news_news.nhn?code=${encodeURIComponent(sym.replace(/^KRX:/,""))}`
-    : `https://search.naver.com/search.naver?where=news&query=${encodeURIComponent(sym + " 주가")}`;
-
-  return [
-    { label: "Google News 검색", href: google },
-    { label: "Yahoo Finance News", href: yahoo },
-    { label: "네이버 뉴스", href: naver }
-  ];
+  return { google, yahooQuote, naverQuote };
 }
 
-/* ========= TradingView Advanced Chart =========
-   - tv.js 로딩 후 위젯 생성
-   - 새 심볼 적용 시 컨테이너 비우고 재생성 */
-function waitForTradingView(){
-  return new Promise((resolve)=>{
-    if (window.TradingView) return resolve();
-    const timer = setInterval(()=>{
-      if(window.TradingView){ clearInterval(timer); resolve(); }
-    }, 50);
-  });
+function buildNewsTable(sym){
+  const { google, yahooQuote, naverQuote } = linkSet(sym);
+  const rows = [
+    { label: "Google News", href: google },
+    { label: "Yahoo Finance", href: yahooQuote + "/news" },
+    { label: "네이버 뉴스", href: /^KRX:/.test(sym)
+        ? `https://finance.naver.com/item/news_news.nhn?code=${encodeURIComponent(sym.replace(/^KRX:/,""))}`
+        : `https://search.naver.com/search.naver?where=news&query=${encodeURIComponent(sym + " 주가")}`
+    }
+  ];
+  const tbody = $("#newsTableBody");
+  tbody.innerHTML = rows
+    .map(r => `<tr><td>${r.label}</td><td><a target="_blank" rel="noopener" href="${r.href}">열기</a></td></tr>`)
+    .join("");
 }
+
+/* ========= TradingView 차트 ========= */
 function renderChart(sym){
   $("#chartContainer").innerHTML = "";
   const containerId = "tv_chart_" + Date.now();
@@ -84,19 +68,19 @@ function renderChart(sym){
     container_id: containerId,
     symbol: sym,
     interval: "D",
+    timeframe: "6M",       // ★ 기본 6개월로 시작
     theme: "dark",
-    timeframe: "6M",
-    style: "1",            // 1=캔들
+    style: "1",
     locale: "kr",
     autosize: true,
+    withdateranges: true,
     hide_top_toolbar: false,
     hide_legend: false,
-    withdateranges: true,
-    studies: ["MASimple@tv-basicstudies"], // 기본 MA
+    studies: ["MASimple@tv-basicstudies"]
   });
 }
 
-/* ========= 관심목록 렌더 ========= */
+/* ========= 관심목록 ========= */
 function renderWatchlist(){
   const list = WATCHLISTS[currentListKey];
   const ul = $("#watchlist");
@@ -105,9 +89,7 @@ function renderWatchlist(){
     const li = document.createElement("li");
     li.textContent = s.replace(/^KRX:/,"KRX·");
     if (normalizeSymbol(s) === currentSymbol) li.classList.add("active");
-    li.addEventListener("click", ()=>{
-      setSymbol(s);
-    });
+    li.addEventListener("click", ()=> setSymbol(s));
     ul.appendChild(li);
   });
 }
@@ -122,64 +104,53 @@ function setWatchPage(btn){
 function setSymbol(input){
   const sym = normalizeSymbol(input);
   currentSymbol = sym;
+
   $("#activeSymbol").textContent = sym;
-  // 상단 퀵링크
-  const links = linkSet(sym).map(l => `<a target="_blank" rel="noopener" href="${l.href}">${l.label}</a>`).join("");
-  $("#quickLinks").innerHTML = links;
-  // 뉴스 링크
-  const news = newsLinks(sym).map(l => `<li><a target="_blank" rel="noopener" href="${l.href}">${l.label}</a></li>`).join("");
-  $("#newsLinks").innerHTML = news;
-  // 노트 로드
-  loadNote(sym);
-  // 차트 렌더
+
+  // 상단 퀵링크(요약)
+  const { google, yahooQuote, naverQuote } = linkSet(sym);
+  $("#quickLinks").innerHTML = `
+    <a target="_blank" rel="noopener" href="${yahooQuote}">Quote</a>
+    <a target="_blank" rel="noopener" href="${google}">News</a>
+    <a target="_blank" rel="noopener" href="${naverQuote}">국내</a>
+  `;
+
+  // 뉴스 테이블(별도)
+  buildNewsTable(sym);
+
+  // 차트
   renderChart(sym);
 }
 
-/* ========= 탭 전환 ========= */
+/* ========= 탭 ========= */
 function setTab(btn){
   $$(".tab-btn").forEach(b=>b.classList.remove("active"));
   btn.classList.add("active");
-
   $$(".tab-content").forEach(c=>c.classList.remove("active"));
   $("#tab-" + btn.dataset.tab).classList.add("active");
 }
 
-/* ========= 위젯(스크리너/캘린더) 붙이기 =========
-   TradingView Market Data Widgets: embed JSON 스니펫을 동적 삽입 */
+/* ========= 외부 위젯들 ========= */
 function mountScreener(){
   const mount = $("#screenerMount");
   mount.innerHTML = "";
   const script = document.createElement("script");
-  script.type = "text/javascript";
   script.src = "https://s3.tradingview.com/external-embedding/embed-widget-screener.js";
   script.async = true;
   script.innerHTML = JSON.stringify({
-    "width": "100%",
-    "height": 420,
-    "defaultColumn": "overview",
-    "defaultScreen": "general",
-    "market": "america",
-    "showToolbar": true,
-    "colorTheme": "dark",
-    "locale": "kr"
+    width: "100%", height: 420, defaultColumn: "overview", defaultScreen: "general",
+    market: "america", showToolbar: true, colorTheme: "dark", locale: "kr"
   });
   mount.appendChild(script);
 }
-
 function mountCalendar(){
   const mount = $("#calendarMount");
   mount.innerHTML = "";
   const script = document.createElement("script");
-  script.type = "text/javascript";
   script.src = "https://s3.tradingview.com/external-embedding/embed-widget-events.js";
   script.async = true;
   script.innerHTML = JSON.stringify({
-    "colorTheme": "dark",
-    "isTransparent": false,
-    "width": "100%",
-    "height": 420,
-    "locale": "kr",
-    "importanceFilter": "-1,0,1" // 전부
+    colorTheme: "dark", isTransparent: false, width: "100%", height: 420, locale: "kr", importanceFilter: "-1,0,1"
   });
   mount.appendChild(script);
 }
@@ -213,6 +184,7 @@ $("#calcBtn")?.addEventListener("click", ()=>{
   `;
 });
 
+/* ========= 평단 ========= */
 $("#avgBtn")?.addEventListener("click", ()=>{
   const p1 = parseFloat($("#p1").value), q1 = parseFloat($("#q1").value);
   const p2 = parseFloat($("#p2").value), q2 = parseFloat($("#q2").value);
@@ -225,23 +197,7 @@ $("#avgBtn")?.addEventListener("click", ()=>{
   out.textContent = "평단가: " + avg.toFixed(4);
 });
 
-/* ========= 노트 자동 저장 ========= */
-function noteKey(sym){ return "note:" + sym; }
-function loadNote(sym){
-  const val = localStorage.getItem(noteKey(sym)) || "";
-  $("#noteArea").value = val;
-  $("#noteSaved").textContent = val ? "자동 저장됨" : "작성 후 자동 저장";
-}
-let noteTimer = null;
-$("#noteArea")?.addEventListener("input", ()=>{
-  if(noteTimer) clearTimeout(noteTimer);
-  noteTimer = setTimeout(()=>{
-    localStorage.setItem(noteKey(currentSymbol), $("#noteArea").value);
-    $("#noteSaved").textContent = "자동 저장됨";
-  }, 400);
-});
-
-/* ========= 이벤트 바인딩 ========= */
+/* ========= 이벤트 ========= */
 $("#applyBtn")?.addEventListener("click", ()=>{
   const raw = $("#symbolInput").value;
   if(!raw) return;
@@ -258,15 +214,9 @@ $$(".tab-btn").forEach(btn=>{
 });
 
 /* ========= 초기화 ========= */
-(async function init(){
-  // 탭 초기 위젯
+(function init(){
   mountScreener();
   mountCalendar();
-
-  // TV 로드 대기 후 차트
-  await waitForTradingView();
   setSymbol(DEFAULT_SYMBOL);
-
-  // 관심목록 초기 렌더
   renderWatchlist();
 })();
