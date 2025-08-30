@@ -1,13 +1,206 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8">
-  <title>웹 사이트 만들기</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>1년 일봉 차트 (관심 종목)</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; background: #0f1115; color: #e6e8ee; font-family: system-ui, -apple-system, 'SF Pro', Segoe UI, Roboto, sans-serif; }
+    header { padding: 20px 16px; border-bottom: 1px solid #22242b; position: sticky; top: 0; background: #0f1115; z-index: 1; }
+    h1 { margin: 0 0 6px; font-size: 20px; }
+    .sub { opacity: .7; font-size: 13px; }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 16px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px; }
+    .card { background: #141821; border: 1px solid #1d2230; border-radius: 14px; padding: 12px; }
+    .title { display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px; }
+    .badge { font-size: 12px; padding: 4px 8px; border-radius: 999px; border:1px solid #2a3244; opacity:.85;}
+    canvas { width: 100%; height: 260px; }
+    .legend { font-size: 12px; opacity: .7; margin-top: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:6px;}
+    .row > * { font-size:12px; opacity:.8; }
+    .error { color: #ff6b6b; font-size: 12px; }
+    .controls { display:flex; gap:8px; align-items:center; margin-top:8px; }
+    select, button { background:#1a2030; color:#e6e8ee; border:1px solid #2a3244; border-radius: 8px; padding:6px 10px; }
+    button { cursor:pointer; }
+  </style>
 </head>
 <body>
-  <h1>      이걸 들어오다니 ㅋㅋ</h1>
-  <p>이거 보는 사람 김종현</p>
+  <header>
+    <div class="wrap">
+      <h1>1년 일봉 차트</h1>
+      <div class="sub">야후 차트 API(JSON)에서 종가를 가져와 렌더링합니다. (요청 간 딜레이로 429 회피)</div>
+      <div class="controls">
+        <label>범위:
+          <select id="range">
+            <option value="1y" selected>1년</option>
+            <option value="6mo">6개월</option>
+            <option value="ytd">YTD</option>
+            <option value="2y">2년</option>
+          </select>
+        </label>
+        <label>간격:
+          <select id="interval">
+            <option value="1d" selected>1일</option>
+            <option value="1wk">1주</option>
+            <option value="1mo">1개월</option>
+          </select>
+        </label>
+        <button id="reload">새로고침</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <div id="grid" class="grid"></div>
+  </div>
+
+  <script>
+    // ==== 심볼 목록: 네가 말한 10개 + 보기용 이름 ====
+    const SYMBOLS = [
+      { sym: "000880.KS", name: "한화" },
+      { sym: "047810.KS", name: "KAI(한국항공우주)" },
+      { sym: "225570.KQ", name: "넥슨게임즈" },
+      { sym: "079550.KS", name: "LIG넥스원" },
+      { sym: "069500.KS", name: "KODEX 200" },
+      { sym: "360750.KS", name: "TIGER 미국 S&P500" },
+      { sym: "KO",        name: "코카콜라" },
+      { sym: "AAPL",      name: "애플" },
+      { sym: "GOOGL",     name: "구글" },
+      { sym: "TSLA",      name: "테슬라" },
+    ];
+
+    // ==== 야후 차트 API ====
+    // 예: https://query1.finance.yahoo.com/v8/finance/chart/AAPL?range=1y&interval=1d
+    const CHART_BASE = "https://query1.finance.yahoo.com/v8/finance/chart/";
+
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    const fmtDate = (ts) => {
+      // 야후는 초 단위 epoch (간혹 tz오프셋 포함)
+      const d = new Date(ts * 1000);
+      // 로컬 타임존로 표시
+      return d.toISOString().slice(0,10);
+    };
+
+    // 차트 색 1개(Chart.js가 기본 팔레트 선택), 다크 배경에서 보기 좋게 약간 투명
+    const datasetStyle = {
+      fill: false,
+      tension: 0.15,
+      borderWidth: 2,
+      pointRadius: 0,
+    };
+
+    async function fetchSeries(symbol, range, interval) {
+      const url = `${CHART_BASE}${encodeURIComponent(symbol)}?range=${range}&interval=${interval}`;
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const js = await res.json();
+      const res0 = js?.chart?.result?.[0];
+      if (!res0) throw new Error("no result");
+      const t = res0.timestamp || [];
+      const close = res0.indicators?.quote?.[0]?.close || [];
+      const labels = t.map(fmtDate);
+      // 결측 제거
+      const points = labels.map((d, i) => (close[i] == null ? null : Number(close[i])));
+      return { labels, points };
+    }
+
+    function makeCard({ sym, name }) {
+      const card = document.createElement("div");
+      card.className = "card";
+
+      const t = document.createElement("div");
+      t.className = "title";
+      t.innerHTML = `<div><strong>${name}</strong> <span style="opacity:.6">(${sym})</span></div>
+                     <span class="badge">종가(Line)</span>`;
+      card.appendChild(t);
+
+      const cv = document.createElement("canvas");
+      card.appendChild(cv);
+
+      const info = document.createElement("div");
+      info.className = "legend";
+      info.textContent = "불러오는 중…";
+      card.appendChild(info);
+
+      const err = document.createElement("div");
+      err.className = "error";
+      card.appendChild(err);
+
+      return { card, cv, info, err };
+    }
+
+    async function renderAll() {
+      const grid = document.getElementById("grid");
+      grid.innerHTML = "";
+      const range = document.getElementById("range").value;
+      const interval = document.getElementById("interval").value;
+
+      for (let i = 0; i < SYMBOLS.length; i++) {
+        const meta = SYMBOLS[i];
+        const { card, cv, info, err } = makeCard(meta);
+        grid.appendChild(card);
+
+        try {
+          // 요청 간 딜레이(429 회피): 800~1200ms
+          if (i > 0) await sleep(800 + Math.random() * 400);
+
+          const { labels, points } = await fetchSeries(meta.sym, range, interval);
+
+          // 최신가/전일 대비 간단 표시
+          const last = points.filter(v => v != null).at(-1);
+          const prev = points.filter(v => v != null).at(-2);
+          const chg = (last != null && prev != null) ? ((last - prev) / prev * 100) : null;
+          info.innerHTML = chg == null
+            ? `데이터 ${labels.length}개`
+            : `최근 종가: <b>${last.toLocaleString()}</b> (${chg >= 0 ? "+" : ""}${chg.toFixed(2)}%)`;
+
+          // 차트 렌더
+          new Chart(cv.getContext("2d"), {
+            type: "line",
+            data: {
+              labels,
+              datasets: [{
+                label: meta.name,
+                data: points,
+                ...datasetStyle
+              }]
+            },
+            options: {
+              responsive: true,
+              animation: false,
+              scales: {
+                x: {
+                  grid: { color: "rgba(255,255,255,0.06)" },
+                  ticks: { maxTicksLimit: 6 }
+                },
+                y: {
+                  grid: { color: "rgba(255,255,255,0.06)" },
+                  ticks: { callback: v => Number(v).toLocaleString() }
+                }
+              },
+              plugins: {
+                legend: { display: false },
+                tooltip: {
+                  mode: "index",
+                  intersect: false,
+                  callbacks: {
+                    label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y?.toLocaleString()}`
+                  }
+                }
+              }
+            }
+          });
+        } catch (e) {
+          err.textContent = `불러오기 실패: ${e.message}`;
+          info.textContent = "";
+        }
+      }
+    }
+
+    document.getElementById("reload").addEventListener("click", renderAll);
+    renderAll();
+  </script>
 </body>
 </html>
-
-
