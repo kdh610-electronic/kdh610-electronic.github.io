@@ -1,215 +1,271 @@
-/******** 설정 ********/
-// Alpha Vantage 무료 플랜 절약: 1.5초 스로틀 + 6시간 캐시
-const API_KEY = "4L2KP1QEQ5C01C8Y"; // 형의 키
-const SYMBOLS = [
-  "AAPL","MSFT","TSLA","NVDA",
-  "GOOG","AMZN","META","NFLX",
-  "AMD","INTC","IBM","ORCL"
-]; // 12개 (3페이지 x 4)
-const PAGE_SIZE = 4;
-const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6시간
-const REQUEST_INTERVAL_MS = 1500; // 1.5초 간격
-const MONTHS_WINDOW = 6; // 최근 6개월 차트
+/* ========= 기본 설정 ========= */
+const DEFAULT_SYMBOL = "AAPL";
 
-/******** 상태 ********/
-let currentPage = 1;
-const charts = new Map(); // symbol -> Chart
+const WATCHLISTS = {
+  "us-tech": ["AAPL","MSFT","NVDA","AMZN","META","GOOG","TSLA","NFLX","ADBE","CRM","AVGO","AMD"],
+  "us-semi": ["NVDA","AMD","AVGO","INTC","TSM","ASML","QCOM","MU","AMAT","LRCX","KLAC","TXN"],
+  "kr-large": ["KRX:005930","KRX:000660","KRX:035720","KRX:051910","KRX:207940","KRX:005380","KRX:035420","KRX:105560","KRX:066570","KRX:028260","KRX:068270","KRX:003550"]
+};
 
-/******** 유틸 ********/
+let currentListKey = "us-tech";
+let currentSymbol = DEFAULT_SYMBOL;
+let tvWidget = null;
+
+/* ========= DOM 헬퍼 ========= */
 const $ = (sel) => document.querySelector(sel);
-function byId(id){ return document.getElementById(id); }
-function cacheKey(symbol){ return `av:${symbol}:WEEKLY`; } // 6개월은 WEEKLY로 충분
-function setCache(symbol, payload){
-  localStorage.setItem(cacheKey(symbol), JSON.stringify({ t: Date.now(), payload }));
-}
-function getCache(symbol){
-  const raw = localStorage.getItem(cacheKey(symbol));
-  if(!raw) return null;
-  try{
-    const obj = JSON.parse(raw);
-    if(Date.now() - obj.t < CACHE_TTL_MS) return obj.payload;
-  }catch(e){}
-  return null;
-}
-function paginate(arr, page, size){
-  const s = (page-1)*size;
-  return arr.slice(s, s+size);
+const $$ = (sel) => document.querySelectorAll(sel);
+
+/* ========= 심볼 정규화 =========
+   - 'KRX:005930' 유지
+   - '005930' -> 'KRX:005930'
+   - 'aapl' -> 'AAPL' */
+function normalizeSymbol(input){
+  if(!input) return DEFAULT_SYMBOL;
+  let s = input.trim();
+  if (/^KRX:/i.test(s)) return "KRX:" + s.split(":")[1].toUpperCase();
+  if (/^\d{6}$/.test(s)) return "KRX:" + s; // 한국 6자리 종목코드
+  return s.toUpperCase();
 }
 
-/******** 요청 큐(스로틀) ********/
-const queue = [];
-let qTimer = null;
-function enqueue(fn){
-  return new Promise((resolve, reject)=>{
-    queue.push({fn, resolve, reject});
-    pump();
+/* ========= 링크 빌더 ========= */
+function linkSet(sym){
+  const plain = sym.replace(/^KRX:/, "");
+  const isKR = /^KRX:/.test(sym);
+
+  const google = `https://news.google.com/search?q=${encodeURIComponent(sym + " stock")}&hl=ko&gl=KR&ceid=KR:ko`;
+  const yahoo  = isKR
+    ? `https://finance.yahoo.com/quote/${encodeURIComponent(plain)}.KS`
+    : `https://finance.yahoo.com/quote/${encodeURIComponent(sym)}`;
+  const naver  = isKR
+    ? `https://finance.naver.com/item/main.nhn?code=${encodeURIComponent(plain)}`
+    : `https://search.naver.com/search.naver?where=news&query=${encodeURIComponent(sym + " 주가")}`;
+
+  return [
+    { label: "Google 뉴스", href: google },
+    { label: "Yahoo Finance", href: yahoo },
+    { label: "네이버", href: naver }
+  ];
+}
+function newsLinks(sym){
+  // 빠른 접근 링크 모음 (테이블 대신 리스트)
+  const google = `https://news.google.com/search?q=${encodeURIComponent(sym + " stock")}&hl=ko&gl=KR&ceid=KR:ko`;
+  const yahoo  = `https://finance.yahoo.com/quote/${encodeURIComponent(sym.replace(/^KRX:/,"") + (/^KRX:/.test(sym)?".KS":""))}/news`;
+  const naver  = /^KRX:/.test(sym)
+    ? `https://finance.naver.com/item/news_news.nhn?code=${encodeURIComponent(sym.replace(/^KRX:/,""))}`
+    : `https://search.naver.com/search.naver?where=news&query=${encodeURIComponent(sym + " 주가")}`;
+
+  return [
+    { label: "Google News 검색", href: google },
+    { label: "Yahoo Finance News", href: yahoo },
+    { label: "네이버 뉴스", href: naver }
+  ];
+}
+
+/* ========= TradingView Advanced Chart =========
+   - tv.js 로딩 후 위젯 생성
+   - 새 심볼 적용 시 컨테이너 비우고 재생성 */
+function waitForTradingView(){
+  return new Promise((resolve)=>{
+    if (window.TradingView) return resolve();
+    const timer = setInterval(()=>{
+      if(window.TradingView){ clearInterval(timer); resolve(); }
+    }, 50);
   });
 }
-function pump(){
-  if(qTimer) return;
-  qTimer = setInterval(async ()=>{
-    if(queue.length === 0){
-      clearInterval(qTimer); qTimer = null; return;
-    }
-    const {fn, resolve, reject} = queue.shift();
-    try { resolve(await fn()); }
-    catch(e){ reject(e); }
-  }, REQUEST_INTERVAL_MS);
+function renderChart(sym){
+  $("#chartContainer").innerHTML = "";
+  const containerId = "tv_chart_" + Date.now();
+  const div = document.createElement("div");
+  div.id = containerId;
+  div.style.height = "100%";
+  $("#chartContainer").appendChild(div);
+
+  new TradingView.widget({
+    container_id: containerId,
+    symbol: sym,
+    interval: "D",
+    theme: "dark",
+    style: "1",            // 1=캔들
+    locale: "kr",
+    autosize: true,
+    hide_top_toolbar: false,
+    hide_legend: false,
+    withdateranges: true,
+    studies: ["MASimple@tv-basicstudies"], // 기본 MA
+  });
 }
 
-/******** Alpha Vantage 호출 ********/
-function apiUrlWeekly(symbol){
-  return `https://www.alphavantage.co/query?function=TIME_SERIES_WEEKLY&symbol=${symbol}&apikey=${API_KEY}`;
+/* ========= 관심목록 렌더 ========= */
+function renderWatchlist(){
+  const list = WATCHLISTS[currentListKey];
+  const ul = $("#watchlist");
+  ul.innerHTML = "";
+  list.forEach(s=>{
+    const li = document.createElement("li");
+    li.textContent = s.replace(/^KRX:/,"KRX·");
+    if (normalizeSymbol(s) === currentSymbol) li.classList.add("active");
+    li.addEventListener("click", ()=>{
+      setSymbol(s);
+    });
+    ul.appendChild(li);
+  });
+}
+function setWatchPage(btn){
+  $$(".watch-page").forEach(b=>b.classList.remove("active"));
+  btn.classList.add("active");
+  currentListKey = btn.dataset.list;
+  renderWatchlist();
 }
 
-async function fetchWeekly(symbol){
-  const cached = getCache(symbol);
-  if(cached) return cached;
+/* ========= 심볼 변경 ========= */
+function setSymbol(input){
+  const sym = normalizeSymbol(input);
+  currentSymbol = sym;
+  $("#activeSymbol").textContent = sym;
+  // 상단 퀵링크
+  const links = linkSet(sym).map(l => `<a target="_blank" rel="noopener" href="${l.href}">${l.label}</a>`).join("");
+  $("#quickLinks").innerHTML = links;
+  // 뉴스 링크
+  const news = newsLinks(sym).map(l => `<li><a target="_blank" rel="noopener" href="${l.href}">${l.label}</a></li>`).join("");
+  $("#newsLinks").innerHTML = news;
+  // 노트 로드
+  loadNote(sym);
+  // 차트 렌더
+  renderChart(sym);
+}
 
-  const res = await fetch(apiUrlWeekly(symbol));
-  const json = await res.json();
-  const key = Object.keys(json).find(k=>k.includes("Time Series"));
-  if(!key) throw new Error(`불러오기 실패(${symbol}): ${JSON.stringify(json).slice(0,120)}`);
-  const series = json[key]; // { 'YYYY-MM-DD': { '4. close': '...' } }
+/* ========= 탭 전환 ========= */
+function setTab(btn){
+  $$(".tab-btn").forEach(b=>b.classList.remove("active"));
+  btn.classList.add("active");
 
-  // 날짜 오름차순 정렬
-  const entries = Object.entries(series).sort((a,b)=> new Date(a[0]) - new Date(b[0]));
+  $$(".tab-content").forEach(c=>c.classList.remove("active"));
+  $("#tab-" + btn.dataset.tab).classList.add("active");
+}
 
-  // 최근 6개월(약 26주)만 컷
-  const cutoff = new Date();
-  cutoff.setMonth(cutoff.getMonth() - MONTHS_WINDOW);
-  const labels = [];
-  const closes = [];
-  for(const [date, ohlc] of entries){
-    const d = new Date(date);
-    if(d >= cutoff){
-      labels.push(date);
-      closes.push(parseFloat(ohlc["4. close"]));
-    }
+/* ========= 위젯(스크리너/캘린더) 붙이기 =========
+   TradingView Market Data Widgets: embed JSON 스니펫을 동적 삽입 */
+function mountScreener(){
+  const mount = $("#screenerMount");
+  mount.innerHTML = "";
+  const script = document.createElement("script");
+  script.type = "text/javascript";
+  script.src = "https://s3.tradingview.com/external-embedding/embed-widget-screener.js";
+  script.async = true;
+  script.innerHTML = JSON.stringify({
+    "width": "100%",
+    "height": 420,
+    "defaultColumn": "overview",
+    "defaultScreen": "general",
+    "market": "america",
+    "showToolbar": true,
+    "colorTheme": "dark",
+    "locale": "kr"
+  });
+  mount.appendChild(script);
+}
+
+function mountCalendar(){
+  const mount = $("#calendarMount");
+  mount.innerHTML = "";
+  const script = document.createElement("script");
+  script.type = "text/javascript";
+  script.src = "https://s3.tradingview.com/external-embedding/embed-widget-events.js";
+  script.async = true;
+  script.innerHTML = JSON.stringify({
+    "colorTheme": "dark",
+    "isTransparent": false,
+    "width": "100%",
+    "height": 420,
+    "locale": "kr",
+    "importanceFilter": "-1,0,1" // 전부
+  });
+  mount.appendChild(script);
+}
+
+/* ========= 계산기 ========= */
+$("#calcBtn")?.addEventListener("click", ()=>{
+  const acc = parseFloat($("#accSize").value);
+  const rp  = parseFloat($("#riskPct").value);
+  const entry = parseFloat($("#entryPrice").value);
+  const stop  = parseFloat($("#stopPrice").value);
+  const out = $("#posResult");
+
+  if([acc,rp,entry,stop].some(v => !isFinite(v))){
+    out.innerHTML = "<div>값을 모두 올바르게 입력해줘.</div>";
+    return;
   }
+  const riskAmt = acc * (rp/100);
+  const perShare = Math.abs(entry - stop);
+  if (perShare <= 0){
+    out.innerHTML = "<div>손절가는 진입가와 달라야 합니다.</div>";
+    return;
+  }
+  const shares = Math.floor(riskAmt / perShare);
+  const posAmt = shares * entry;
 
-  const payload = { labels, closes };
-  setCache(symbol, payload);
-  return payload;
-}
-
-/******** 카드/차트 ********/
-function createCard(symbol){
-  const wrap = document.createElement("div");
-  wrap.className = "card";
-  wrap.innerHTML = `
-    <div class="card-header">
-      <div class="card-title">${symbol}</div>
-      <div class="meta">최근 6개월 (주봉)</div>
-    </div>
-    <div id="state-${symbol}" class="loading">불러오는 중…</div>
-    <div class="chart-wrap"><canvas id="cv-${symbol}" style="display:none"></canvas></div>
-
-    <table class="news">
-      <tr><th>관련 기사</th>
-        <td>
-          <a target="_blank" href="${googleNews(symbol)}">Google 뉴스</a> ·
-          <a target="_blank" href="${naverNews(symbol)}">네이버 뉴스</a> ·
-          <a target="_blank" href="${yahooNews(symbol)}">Yahoo Finance</a>
-        </td>
-      </tr>
-    </table>
+  out.innerHTML = `
+    <div>허용 리스크 금액: <b>${riskAmt.toLocaleString()}</b></div>
+    <div>1주당 리스크: <b>${perShare.toLocaleString()}</b></div>
+    <div>매수 수량(최대): <b>${shares.toLocaleString()}</b></div>
+    <div>포지션 금액(대략): <b>${posAmt.toLocaleString()}</b></div>
   `;
-  return wrap;
-}
-
-function googleNews(sym){
-  const q = encodeURIComponent(`${sym} stock`);
-  return `https://news.google.com/search?q=${q}&hl=ko&gl=KR&ceid=KR:ko`;
-}
-function naverNews(sym){
-  const q = encodeURIComponent(`${sym} 주가`);
-  return `https://search.naver.com/search.naver?where=news&query=${q}`;
-}
-function yahooNews(sym){
-  return `https://finance.yahoo.com/quote/${encodeURIComponent(sym)}/news`;
-}
-
-async function drawSymbol(symbol){
-  const state = byId(`state-${symbol}`);
-  const canvas = byId(`cv-${symbol}`);
-  state.textContent = "불러오는 중…";
-  canvas.style.display = "none";
-
-  try{
-    const { labels, closes } = await enqueue(()=> fetchWeekly(symbol));
-
-    state.style.display = "none";
-    canvas.style.display = "block";
-
-    // 기존 차트 제거
-    if(charts.has(symbol)){
-      charts.get(symbol).destroy();
-      charts.delete(symbol);
-    }
-    const ctx = canvas.getContext("2d");
-    const chart = new Chart(ctx, {
-      type: "line",
-      data: {
-        labels,
-        datasets: [{
-          label: `${symbol} (6M)`,
-          data: closes,
-          borderWidth: 2,
-          pointRadius: 0,
-          tension: 0.2
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          x: { ticks: { maxTicksLimit: 8 }},
-          y: { beginAtZero: false }
-        },
-        plugins: { legend: { display:false } }
-      }
-    });
-    charts.set(symbol, chart);
-  }catch(e){
-    state.className = "error";
-    state.textContent = `에러: ${e.message}`;
-  }
-}
-
-/******** 페이지 렌더링 ********/
-function renderPage(){
-  // 기존 차트 정리
-  charts.forEach(ch => ch.destroy());
-  charts.clear();
-
-  const grid = $("#grid");
-  grid.innerHTML = "";
-
-  const list = paginate(SYMBOLS, currentPage, PAGE_SIZE);
-  list.forEach(sym => grid.appendChild(createCard(sym)));
-
-  (async () => {
-    for(const sym of list){
-      await drawSymbol(sym);
-    }
-  })();
-}
-
-/******** 이벤트 ********/
-function bindEvents(){
-  document.querySelectorAll(".page-btn").forEach(btn=>{
-    btn.addEventListener("click", ()=>{
-      document.querySelectorAll(".page-btn").forEach(b=>b.classList.remove("active"));
-      btn.classList.add("active");
-      currentPage = Number(btn.dataset.page);
-      renderPage();
-    });
-  });
-}
-
-/******** 시작 ********/
-document.addEventListener("DOMContentLoaded", ()=>{
-  bindEvents();
-  renderPage();
 });
+
+$("#avgBtn")?.addEventListener("click", ()=>{
+  const p1 = parseFloat($("#p1").value), q1 = parseFloat($("#q1").value);
+  const p2 = parseFloat($("#p2").value), q2 = parseFloat($("#q2").value);
+  const out = $("#avgResult");
+  if([p1,q1,p2,q2].some(v => !isFinite(v) || v<=0)){
+    out.textContent = "입력값을 확인해줘.";
+    return;
+  }
+  const avg = (p1*q1 + p2*q2) / (q1+q2);
+  out.textContent = "평단가: " + avg.toFixed(4);
+});
+
+/* ========= 노트 자동 저장 ========= */
+function noteKey(sym){ return "note:" + sym; }
+function loadNote(sym){
+  const val = localStorage.getItem(noteKey(sym)) || "";
+  $("#noteArea").value = val;
+  $("#noteSaved").textContent = val ? "자동 저장됨" : "작성 후 자동 저장";
+}
+let noteTimer = null;
+$("#noteArea")?.addEventListener("input", ()=>{
+  if(noteTimer) clearTimeout(noteTimer);
+  noteTimer = setTimeout(()=>{
+    localStorage.setItem(noteKey(currentSymbol), $("#noteArea").value);
+    $("#noteSaved").textContent = "자동 저장됨";
+  }, 400);
+});
+
+/* ========= 이벤트 바인딩 ========= */
+$("#applyBtn")?.addEventListener("click", ()=>{
+  const raw = $("#symbolInput").value;
+  if(!raw) return;
+  setSymbol(raw);
+});
+$("#symbolInput")?.addEventListener("keydown", (e)=>{
+  if(e.key === "Enter"){ $("#applyBtn").click(); }
+});
+$$(".watch-page").forEach(btn=>{
+  btn.addEventListener("click", ()=> setWatchPage(btn));
+});
+$$(".tab-btn").forEach(btn=>{
+  btn.addEventListener("click", ()=> setTab(btn));
+});
+
+/* ========= 초기화 ========= */
+(async function init(){
+  // 탭 초기 위젯
+  mountScreener();
+  mountCalendar();
+
+  // TV 로드 대기 후 차트
+  await waitForTradingView();
+  setSymbol(DEFAULT_SYMBOL);
+
+  // 관심목록 초기 렌더
+  renderWatchlist();
+})();
