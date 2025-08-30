@@ -86,7 +86,7 @@ body{
 .watchlist li:hover{ outline:1px solid #29508f; }
 .watchlist li.active{ outline:2px solid var(--accent); }
 
-/* Side panel (tools/news) */
+/* Side panel (tools/news/resources) */
 .side-panel{ display:grid; gap:14px; padding:14px; }
 .tool-card{
   background:var(--card); border:1px solid var(--border); border-radius:16px; padding:12px;
@@ -108,10 +108,24 @@ textarea{
   background:#0e1a2e; color:var(--text);
 }
 
-/* News links */
-.news-links{ list-style:none; padding:0; margin:0; display:grid; gap:8px; }
-.news-links a{ color:var(--accent); text-decoration:none; }
-.news-links a:hover{ text-decoration:underline; }
+/* 뉴스/자료 테이블 */
+.news-table, .res-table{
+  width:100%; border-collapse:collapse; background:transparent;
+}
+.news-table th, .news-table td,
+.res-table td{
+  border-top:1px solid #1c2640;
+  padding:8px; font-size:13px;
+}
+.news-table thead th{
+  color:#aeb7c6; font-weight:700; text-align:left;
+}
+.news-table a, .res-table a{
+  color:#dbe6ff; text-decoration:none; border:1px solid #2a3d6c; padding:4px 8px; border-radius:8px;
+}
+.news-table a:hover, .res-table a:hover{
+  background:#1a2b52;
+}
 
 /* Footer */
 .footer{
