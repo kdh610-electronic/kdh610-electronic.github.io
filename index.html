@@ -127,25 +127,35 @@
         <div class="muted small">※ 각 사이트의 이용약관·robots 정책 준수 권장</div>
       </div>
 
-      <!-- 🔐 암호화 코드 보관함 -->
+      <!-- 🔐 전일 종가 기반 암호화 코드 생성 -->
       <div class="tool-card">
-        <h3>🔐 암호화 코드 보관함 (매일 00:00 자동 갱신)</h3>
+        <h3>🔐 전일 종가 코드 생성 (매일 00:00 자동 새로고침)</h3>
         <div class="form">
-          <label>가공 정보(원문)</label>
-          <textarea id="rawInput" rows="5" placeholder="이곳에 오늘 수집/가공한 텍스트를 넣으세요."></textarea>
-
-          <label>비밀번호</label>
-          <input id="encPassword" type="password" placeholder="암호화에 사용할 비밀번호" />
-
+          <label>심볼</label>
           <div class="grid-2">
-            <button id="encryptBtn" class="btn">암호화 & 저장</button>
-            <button id="decryptBtn" class="btn">복호화</button>
+            <input id="codeSymbol" type="text" placeholder="예: AAPL · TSLA · 005930 또는 KRX:005930">
+            <button id="useActiveBtn" class="btn">현재 차트 심볼 사용</button>
           </div>
 
-          <label>암호화 코드 (저장/백업용)</label>
-          <textarea id="encOutput" rows="4" readonly placeholder="여기에 암호화된 코드가 생성됩니다."></textarea>
-          <div class="muted small" id="encStatus">상태: 대기</div>
-          <div class="muted small">다음 자동 갱신까지: <span id="countdown">계산 중…</span></div>
+          <label>고유 넘버(예: 001)</label>
+          <input id="uniqueNumber" type="text" placeholder="예: 001">
+
+          <label>생성된 코드 (평문)</label>
+          <input id="plainCode" type="text" readonly placeholder="예: 001X23745D20250830">
+
+          <label>비밀번호 (선택)</label>
+          <input id="encPassword" type="password" placeholder="입력 시 암호화 코드가 함께 생성됩니다">
+
+          <label>암호화 코드 (백업용)</label>
+          <textarea id="encOutput" rows="3" readonly placeholder="AES-GCM(비번)으로 암호화된 문자열"></textarea>
+
+          <div class="grid-2">
+            <button id="genCodeBtn" class="btn">전일 종가로 코드 생성</button>
+            <button id="decCodeBtn" class="btn">암호화 코드 복호화</button>
+          </div>
+
+          <div class="muted small" id="codeStatus">상태: 대기</div>
+          <div class="muted small">다음 새로고침까지: <span id="midCountdown">계산 중…</span></div>
         </div>
       </div>
     </aside>
