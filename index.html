@@ -28,9 +28,8 @@
         <h2 id="activeSymbol">AAPL</h2>
         <div class="links" id="quickLinks"></div>
       </div>
-      <div id="chartContainer" class="chart-container">
-        <!-- TradingView 차트가 여기에 렌더됨 -->
-      </div>
+
+      <div id="chartContainer" class="chart-container"><!-- TV 차트 --></div>
 
       <div class="tabs">
         <button class="tab-btn active" data-tab="watchlist">관심목록</button>
@@ -49,15 +48,14 @@
           <ul id="watchlist" class="watchlist"></ul>
         </div>
 
-        <!-- 스크리너 (TradingView 위젯) -->
+        <!-- 스크리너 -->
         <div id="tab-screener" class="tab-content">
           <div class="widget-wrap">
-            <!-- 아래 div는 그냥 자리표시자, 실제 위젯은 JS에서 동적으로 붙임 -->
             <div id="screenerMount" class="widget-mount"></div>
           </div>
         </div>
 
-        <!-- 경제지표 (TradingView 위젯) -->
+        <!-- 경제지표 -->
         <div id="tab-calendar" class="tab-content">
           <div class="widget-wrap">
             <div id="calendarMount" class="widget-mount"></div>
@@ -66,7 +64,7 @@
       </div>
     </section>
 
-    <!-- 우측: 도구/노트/뉴스 -->
+    <!-- 우측: 도구 + 뉴스 테이블 + 자료실 -->
     <aside class="panel side-panel">
       <div class="tool-card">
         <h3>포지션 사이징 계산기</h3>
@@ -86,7 +84,6 @@
           <div>1주당 리스크: -</div>
           <div>매수 수량(최대): -</div>
           <div>포지션 금액(대략): -</div>
-          <div>R:R (목표가 입력 시 표시)</div>
         </div>
       </div>
 
@@ -102,18 +99,55 @@
         <div class="result" id="avgResult">평단가: -</div>
       </div>
 
+      <!-- 뉴스 테이블 (심볼 변경 시 갱신) -->
       <div class="tool-card">
-        <h3>심볼 노트(로컬 저장)</h3>
-        <textarea id="noteArea" rows="6" placeholder="해당 심볼에 대한 아이디어/메모를 적어두자. (자동 저장)"></textarea>
-        <div class="muted" id="noteSaved">저장 안 됨</div>
+        <h3>관련 뉴스/정보 (심볼별)</h3>
+        <table class="news-table">
+          <thead>
+            <tr><th>분류</th><th>바로가기</th></tr>
+          </thead>
+          <tbody id="newsTableBody">
+            <!-- JS에서 채움 -->
+          </tbody>
+        </table>
       </div>
 
+      <!-- 크롤링 자료실 -->
       <div class="tool-card">
-        <h3>관련 뉴스/정보</h3>
-        <ul id="newsLinks" class="news-links"></ul>
-        <div class="muted small">
-          * 링크는 외부 사이트로 연결됩니다. (Google News / Yahoo Finance / Naver 등)
-        </div>
+        <h3>크롤링 자료 모음</h3>
+        <table class="res-table">
+          <tbody>
+            <tr>
+              <td>robots.txt 규칙</td>
+              <td><a target="_blank" rel="noopener" href="https://developers.google.com/search/docs/crawling-indexing/robots/intro?hl=ko">가이드</a></td>
+            </tr>
+            <tr>
+              <td>Sitemap 프로토콜</td>
+              <td><a target="_blank" rel="noopener" href="https://www.sitemaps.org/protocol.html">공식 문서</a></td>
+            </tr>
+            <tr>
+              <td>CSS 선택자 치트시트</td>
+              <td><a target="_blank" rel="noopener" href="https://developer.mozilla.org/ko/docs/Web/CSS/CSS_selectors">MDN</a></td>
+            </tr>
+            <tr>
+              <td>HTTP 상태코드</td>
+              <td><a target="_blank" rel="noopener" href="https://developer.mozilla.org/ko/docs/Web/HTTP/Status">MDN</a></td>
+            </tr>
+            <tr>
+              <td>요청 간격/레이트 리밋</td>
+              <td><a target="_blank" rel="noopener" href="https://developer.mozilla.org/ko/docs/Web/HTTP/Headers/Retry-After">Retry-After 헤더</a></td>
+            </tr>
+            <tr>
+              <td>User-Agent / 헤더</td>
+              <td><a target="_blank" rel="noopener" href="https://developer.mozilla.org/ko/docs/Web/HTTP/Headers/User-Agent">MDN</a></td>
+            </tr>
+            <tr>
+              <td>크롤링 법적 이슈</td>
+              <td><a target="_blank" rel="noopener" href="https://www.ftc.gov/business-guidance/blog/2024/04/web-scraping-guidance">참고 가이드(영문)</a></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="muted small">※ 각 사이트의 이용약관·robots 정책 준수 권장</div>
       </div>
     </aside>
   </main>
