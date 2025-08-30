@@ -64,7 +64,7 @@
       </div>
     </section>
 
-    <!-- 우측: 도구 + 뉴스 테이블 + 자료실 + 암호화 보관함 -->
+    <!-- 우측: 도구 + 뉴스 테이블 + 자료실 -->
     <aside class="panel side-panel">
       <div class="tool-card">
         <h3>포지션 사이징 계산기</h3>
@@ -99,14 +99,16 @@
         <div class="result" id="avgResult">평단가: -</div>
       </div>
 
-      <!-- 뉴스 테이블 -->
+      <!-- 뉴스 테이블 (심볼 변경 시 갱신) -->
       <div class="tool-card">
         <h3>관련 뉴스/정보 (심볼별)</h3>
         <table class="news-table">
           <thead>
             <tr><th>분류</th><th>바로가기</th></tr>
           </thead>
-          <tbody id="newsTableBody"></tbody>
+          <tbody id="newsTableBody">
+            <!-- JS에서 채움 -->
+          </tbody>
         </table>
       </div>
 
@@ -115,48 +117,37 @@
         <h3>크롤링 자료 모음</h3>
         <table class="res-table">
           <tbody>
-            <tr><td>robots.txt 규칙</td><td><a target="_blank" rel="noopener" href="https://developers.google.com/search/docs/crawling-indexing/robots/intro?hl=ko">가이드</a></td></tr>
-            <tr><td>Sitemap 프로토콜</td><td><a target="_blank" rel="noopener" href="https://www.sitemaps.org/protocol.html">공식 문서</a></td></tr>
-            <tr><td>CSS 선택자 치트시트</td><td><a target="_blank" rel="noopener" href="https://developer.mozilla.org/ko/docs/Web/CSS/CSS_selectors">MDN</a></td></tr>
-            <tr><td>HTTP 상태코드</td><td><a target="_blank" rel="noopener" href="https://developer.mozilla.org/ko/docs/Web/HTTP/Status">MDN</a></td></tr>
-            <tr><td>요청 간격/레이트 리밋</td><td><a target="_blank" rel="noopener" href="https://developer.mozilla.org/ko/docs/Web/HTTP/Headers/Retry-After">Retry-After 헤더</a></td></tr>
-            <tr><td>User-Agent / 헤더</td><td><a target="_blank" rel="noopener" href="https://developer.mozilla.org/ko/docs/Web/HTTP/Headers/User-Agent">MDN</a></td></tr>
-            <tr><td>크롤링 법적 이슈</td><td><a target="_blank" rel="noopener" href="https://www.ftc.gov/business-guidance/blog/2024/04/web-scraping-guidance">참고 가이드(영문)</a></td></tr>
+            <tr>
+              <td>robots.txt 규칙</td>
+              <td><a target="_blank" rel="noopener" href="https://developers.google.com/search/docs/crawling-indexing/robots/intro?hl=ko">가이드</a></td>
+            </tr>
+            <tr>
+              <td>Sitemap 프로토콜</td>
+              <td><a target="_blank" rel="noopener" href="https://www.sitemaps.org/protocol.html">공식 문서</a></td>
+            </tr>
+            <tr>
+              <td>CSS 선택자 치트시트</td>
+              <td><a target="_blank" rel="noopener" href="https://developer.mozilla.org/ko/docs/Web/CSS/CSS_selectors">MDN</a></td>
+            </tr>
+            <tr>
+              <td>HTTP 상태코드</td>
+              <td><a target="_blank" rel="noopener" href="https://developer.mozilla.org/ko/docs/Web/HTTP/Status">MDN</a></td>
+            </tr>
+            <tr>
+              <td>요청 간격/레이트 리밋</td>
+              <td><a target="_blank" rel="noopener" href="https://developer.mozilla.org/ko/docs/Web/HTTP/Headers/Retry-After">Retry-After 헤더</a></td>
+            </tr>
+            <tr>
+              <td>User-Agent / 헤더</td>
+              <td><a target="_blank" rel="noopener" href="https://developer.mozilla.org/ko/docs/Web/HTTP/Headers/User-Agent">MDN</a></td>
+            </tr>
+            <tr>
+              <td>크롤링 법적 이슈</td>
+              <td><a target="_blank" rel="noopener" href="https://www.ftc.gov/business-guidance/blog/2024/04/web-scraping-guidance">참고 가이드(영문)</a></td>
+            </tr>
           </tbody>
         </table>
         <div class="muted small">※ 각 사이트의 이용약관·robots 정책 준수 권장</div>
-      </div>
-
-      <!-- 🔐 전일 종가 기반 암호화 코드 생성 -->
-      <div class="tool-card">
-        <h3>🔐 전일 종가 코드 생성 (매일 00:00 자동 새로고침)</h3>
-        <div class="form">
-          <label>심볼</label>
-          <div class="grid-2">
-            <input id="codeSymbol" type="text" placeholder="예: AAPL · TSLA · 005930 또는 KRX:005930">
-            <button id="useActiveBtn" class="btn">현재 차트 심볼 사용</button>
-          </div>
-
-          <label>고유 넘버(예: 001)</label>
-          <input id="uniqueNumber" type="text" placeholder="예: 001">
-
-          <label>생성된 코드 (평문)</label>
-          <input id="plainCode" type="text" readonly placeholder="예: 001X23745D20250830">
-
-          <label>비밀번호 (선택)</label>
-          <input id="encPassword" type="password" placeholder="입력 시 암호화 코드가 함께 생성됩니다">
-
-          <label>암호화 코드 (백업용)</label>
-          <textarea id="encOutput" rows="3" readonly placeholder="AES-GCM(비번)으로 암호화된 문자열"></textarea>
-
-          <div class="grid-2">
-            <button id="genCodeBtn" class="btn">전일 종가로 코드 생성</button>
-            <button id="decCodeBtn" class="btn">암호화 코드 복호화</button>
-          </div>
-
-          <div class="muted small" id="codeStatus">상태: 대기</div>
-          <div class="muted small">다음 새로고침까지: <span id="midCountdown">계산 중…</span></div>
-        </div>
       </div>
     </aside>
   </main>
