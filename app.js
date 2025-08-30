@@ -1,222 +1,213 @@
-/* ========= 기본 설정 ========= */
-const DEFAULT_SYMBOL = "AAPL";
+/***** 전일 종가 코드 생성 모듈 *****/
 
-const WATCHLISTS = {
-  "us-tech": ["AAPL","MSFT","NVDA","AMZN","META","GOOG","TSLA","NFLX","ADBE","CRM","AVGO","AMD"],
-  "us-semi": ["NVDA","AMD","AVGO","INTC","TSM","ASML","QCOM","MU","AMAT","LRCX","KLAC","TXN"],
-  "kr-large": ["KRX:005930","KRX:000660","KRX:035720","KRX:051910","KRX:207940","KRX:005380","KRX:035420","KRX:105560","KRX:066570","KRX:028260","KRX:068270","KRX:003550"]
-};
+// ✅ Alpha Vantage 키 (필요 시 수정)
+const AV_API_KEY = "4L2KP1QEQ5C01C8Y"; // 형의 키
+// 일일/분당 제한에 안전: 본 모듈은 "심볼당 하루 1회"만 호출 & 로컬 캐시
 
-let currentListKey = "us-tech";
-let currentSymbol = DEFAULT_SYMBOL;
-
-/* ========= DOM ========= */
-const $ = (sel) => document.querySelector(sel);
-const $$ = (sel) => document.querySelectorAll(sel);
-
-/* ========= 심볼 정규화 ========= */
-function normalizeSymbol(input){
-  if(!input) return DEFAULT_SYMBOL;
-  let s = input.trim();
-  if (/^KRX:/i.test(s)) return "KRX:" + s.split(":")[1].toUpperCase();
-  if (/^\d{6}$/.test(s)) return "KRX:" + s; // 한국 6자리 코드 -> KRX 접두사
-  return s.toUpperCase();
+// 로컬 캐시 (24시간)
+const CODE_CACHE_TTL = 24 * 60 * 60 * 1000;
+function codeCacheKey(sym){ return `prevclose:${sym}`; }
+function savePrevClose(sym, payload){
+  localStorage.setItem(codeCacheKey(sym), JSON.stringify({ t: Date.now(), payload }));
+}
+function loadPrevClose(sym){
+  const raw = localStorage.getItem(codeCacheKey(sym));
+  if(!raw) return null;
+  try{
+    const obj = JSON.parse(raw);
+    if(Date.now() - obj.t < CODE_CACHE_TTL) return obj.payload;
+  }catch{}
+  return null;
 }
 
-/* ========= 빠른 링크 / 뉴스 테이블 ========= */
-function linkSet(sym){
-  const plain = sym.replace(/^KRX:/,"");
-  const isKR = /^KRX:/.test(sym);
+// Alpha Vantage에서 전일 종가 얻기 (최신 가용 일자)
+async function fetchPrevClose(symbol){
+  const cached = loadPrevClose(symbol);
+  if(cached) return cached;
 
-  const google = `https://news.google.com/search?q=${encodeURIComponent(sym + " stock")}&hl=ko&gl=KR&ceid=KR:ko`;
-  const yahooQuote = isKR
-    ? `https://finance.yahoo.com/quote/${encodeURIComponent(plain)}.KS`
-    : `https://finance.yahoo.com/quote/${encodeURIComponent(sym)}`;
-  const naverQuote = isKR
-    ? `https://finance.naver.com/item/main.nhn?code=${encodeURIComponent(plain)}`
-    : `https://search.naver.com/search.naver?where=news&query=${encodeURIComponent(sym + " 주가")}`;
+  const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(symbol)}&apikey=${AV_API_KEY}&outputsize=compact`;
+  const res = await fetch(url);
+  const json = await res.json();
+  const key = Object.keys(json).find(k => k.includes("Time Series"));
+  if(!key) throw new Error(`데이터 없음(${symbol})`);
+  const series = json[key]; // { 'YYYY-MM-DD': { '4. close': '...' } }
 
-  return { google, yahooQuote, naverQuote };
+  // 가장 최근 날짜
+  const dates = Object.keys(series).sort(); // 오름차순
+  const lastDate = dates[dates.length - 1];
+  const close = parseFloat(series[lastDate]["4. close"]);
+
+  const payload = { date: lastDate, close };
+  savePrevClose(symbol, payload);
+  return payload;
 }
 
-function buildNewsTable(sym){
-  const { google, yahooQuote, naverQuote } = linkSet(sym);
-  const rows = [
-    { label: "Google News", href: google },
-    { label: "Yahoo Finance", href: yahooQuote + "/news" },
-    { label: "네이버 뉴스", href: /^KRX:/.test(sym)
-        ? `https://finance.naver.com/item/news_news.nhn?code=${encodeURIComponent(sym.replace(/^KRX:/,""))}`
-        : `https://search.naver.com/search.naver?where=news&query=${encodeURIComponent(sym + " 주가")}`
+// 통화/숫자 규칙
+function isKR(sym){ return /^KRX:/i.test(sym) || /^\d{6}$/.test(sym); }
+function formatPriceInt(close, kr){
+  if(kr){
+    // KRW: 소수점 없이 반올림 제거(대부분 정수)
+    return Math.round(close).toString();
+  } else {
+    // USD: 소수점 제거(센트 단위) = 소수 둘째 자리까지 고정 후 점 제거
+    return close.toFixed(2).replace(".", "");
+  }
+}
+function currencyLetter(sym){ return isKR(sym) ? "W" : "D"; }
+function dateCompact(yyyy_mm_dd){ return yyyy_mm_dd.replaceAll("-", ""); }
+
+// 코드 조합: 001X가격D/W날짜  (예: 001X23745D20250830)
+function buildCode(uniqueNumber, priceInt, curLetter, yyyymmdd){
+  return `${uniqueNumber}X${priceInt}${curLetter}${yyyymmdd}`;
+}
+
+// AES-GCM 암호화/복호화 (비번 기반)
+async function deriveKey(password, salt){
+  const enc = new TextEncoder();
+  const keyMat = await crypto.subtle.importKey(
+    "raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]
+  );
+  return crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt, iterations: 100000, hash: "SHA-256" },
+    keyMat, { name: "AES-GCM", length: 256 }, false, ["encrypt","decrypt"]
+  );
+}
+function b64encode(buf){ return btoa(String.fromCharCode(...new Uint8Array(buf))); }
+function b64decode(str){
+  const bin = atob(str); const buf = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) buf[i] = bin.charCodeAt(i);
+  return buf.buffer;
+}
+async function encryptText(plain, password){
+  if(!password) return null;
+  const enc = new TextEncoder();
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv   = crypto.getRandomValues(new Uint8Array(12));
+  const key  = await deriveKey(password, salt);
+  const ct   = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, enc.encode(plain));
+  // 저장 편의: base64(salt) . base64(iv) . base64(cipher)
+  return `${b64encode(salt)}.${b64encode(iv)}.${b64encode(ct)}`;
+}
+async function decryptText(pack, password){
+  const [b64s, b64iv, b64ct] = (pack || "").split(".");
+  if(!b64s || !b64iv || !b64ct) throw new Error("잘못된 암호화 문자열");
+  const salt = new Uint8Array(b64decode(b64s));
+  const iv   = new Uint8Array(b64decode(b64iv));
+  const ct   = b64decode(b64ct);
+  const key  = await deriveKey(password, salt);
+  const pt   = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ct);
+  return new TextDecoder().decode(pt);
+}
+
+// UI 바인딩
+const elSym   = $("#codeSymbol");
+const elUse   = $("#useActiveBtn");
+const elNum   = $("#uniqueNumber");
+const elPlain = $("#plainCode");
+const elPwd   = $("#encPassword");
+const elEnc   = $("#encOutput");
+const elGen   = $("#genCodeBtn");
+const elDec   = $("#decCodeBtn");
+const elStat  = $("#codeStatus");
+const elMid   = $("#midCountdown");
+
+// 현재 차트 심볼 가져오기 (기존 setSymbol/normalizeSymbol과 연계)
+function getActiveSymbolText(){
+  const t = $("#activeSymbol")?.textContent?.trim();
+  return t || DEFAULT_SYMBOL;
+}
+
+// 전일 종가로 코드 생성
+async function generateCode(){
+  try{
+    elStat.textContent = "상태: 전일 종가 조회 중…";
+    let symRaw = elSym.value.trim() || getActiveSymbolText();
+    const sym = normalizeSymbol(symRaw);
+    elSym.value = sym; // 보정 표시
+
+    const uniq = (elNum.value || "").trim();
+    if(!/^[A-Za-z0-9]{3}$/.test(uniq)){
+      elStat.textContent = "상태: 고유 넘버를 3자리 영문/숫자로 입력해줘 (예: 001)";
+      return;
     }
-  ];
-  const tbody = $("#newsTableBody");
-  tbody.innerHTML = rows
-    .map(r => `<tr><td>${r.label}</td><td><a target="_blank" rel="noopener" href="${r.href}">열기</a></td></tr>`)
-    .join("");
-}
 
-/* ========= TradingView 차트 ========= */
-function renderChart(sym){
-  $("#chartContainer").innerHTML = "";
-  const containerId = "tv_chart_" + Date.now();
-  const div = document.createElement("div");
-  div.id = containerId;
-  div.style.height = "100%";
-  $("#chartContainer").appendChild(div);
+    const { date, close } = await fetchPrevClose(sym);
+    const priceInt = formatPriceInt(close, isKR(sym));
+    const cur = currencyLetter(sym);
+    const ymd = dateCompact(date);
 
-  new TradingView.widget({
-    container_id: containerId,
-    symbol: sym,
-    interval: "D",
-    timeframe: "6M",       // ★ 기본 6개월로 시작
-    theme: "dark",
-    style: "1",
-    locale: "kr",
-    autosize: true,
-    withdateranges: true,
-    hide_top_toolbar: false,
-    hide_legend: false,
-    studies: ["MASimple@tv-basicstudies"]
-  });
-}
+    const code = buildCode(uniq, priceInt, cur, ymd);
+    elPlain.value = code;
+    elStat.textContent = `상태: 생성 완료 (${date} 종가 사용)`;
 
-/* ========= 관심목록 ========= */
-function renderWatchlist(){
-  const list = WATCHLISTS[currentListKey];
-  const ul = $("#watchlist");
-  ul.innerHTML = "";
-  list.forEach(s=>{
-    const li = document.createElement("li");
-    li.textContent = s.replace(/^KRX:/,"KRX·");
-    if (normalizeSymbol(s) === currentSymbol) li.classList.add("active");
-    li.addEventListener("click", ()=> setSymbol(s));
-    ul.appendChild(li);
-  });
-}
-function setWatchPage(btn){
-  $$(".watch-page").forEach(b=>b.classList.remove("active"));
-  btn.classList.add("active");
-  currentListKey = btn.dataset.list;
-  renderWatchlist();
-}
+    // 선택 암호화
+    if(elPwd.value){
+      const enc = await encryptText(code, elPwd.value);
+      elEnc.value = enc || "";
+      elStat.textContent += " · 암호화 저장 완료";
+    } else {
+      elEnc.value = "";
+    }
 
-/* ========= 심볼 변경 ========= */
-function setSymbol(input){
-  const sym = normalizeSymbol(input);
-  currentSymbol = sym;
-
-  $("#activeSymbol").textContent = sym;
-
-  // 상단 퀵링크(요약)
-  const { google, yahooQuote, naverQuote } = linkSet(sym);
-  $("#quickLinks").innerHTML = `
-    <a target="_blank" rel="noopener" href="${yahooQuote}">Quote</a>
-    <a target="_blank" rel="noopener" href="${google}">News</a>
-    <a target="_blank" rel="noopener" href="${naverQuote}">국내</a>
-  `;
-
-  // 뉴스 테이블(별도)
-  buildNewsTable(sym);
-
-  // 차트
-  renderChart(sym);
-}
-
-/* ========= 탭 ========= */
-function setTab(btn){
-  $$(".tab-btn").forEach(b=>b.classList.remove("active"));
-  btn.classList.add("active");
-  $$(".tab-content").forEach(c=>c.classList.remove("active"));
-  $("#tab-" + btn.dataset.tab).classList.add("active");
-}
-
-/* ========= 외부 위젯들 ========= */
-function mountScreener(){
-  const mount = $("#screenerMount");
-  mount.innerHTML = "";
-  const script = document.createElement("script");
-  script.src = "https://s3.tradingview.com/external-embedding/embed-widget-screener.js";
-  script.async = true;
-  script.innerHTML = JSON.stringify({
-    width: "100%", height: 420, defaultColumn: "overview", defaultScreen: "general",
-    market: "america", showToolbar: true, colorTheme: "dark", locale: "kr"
-  });
-  mount.appendChild(script);
-}
-function mountCalendar(){
-  const mount = $("#calendarMount");
-  mount.innerHTML = "";
-  const script = document.createElement("script");
-  script.src = "https://s3.tradingview.com/external-embedding/embed-widget-events.js";
-  script.async = true;
-  script.innerHTML = JSON.stringify({
-    colorTheme: "dark", isTransparent: false, width: "100%", height: 420, locale: "kr", importanceFilter: "-1,0,1"
-  });
-  mount.appendChild(script);
-}
-
-/* ========= 계산기 ========= */
-$("#calcBtn")?.addEventListener("click", ()=>{
-  const acc = parseFloat($("#accSize").value);
-  const rp  = parseFloat($("#riskPct").value);
-  const entry = parseFloat($("#entryPrice").value);
-  const stop  = parseFloat($("#stopPrice").value);
-  const out = $("#posResult");
-
-  if([acc,rp,entry,stop].some(v => !isFinite(v))){
-    out.innerHTML = "<div>값을 모두 올바르게 입력해줘.</div>";
-    return;
+    // 오늘 생성한 최신 코드 로컬 저장
+    localStorage.setItem("lastCodePlain", code);
+    localStorage.setItem("lastCodeSymbol", sym);
+    localStorage.setItem("lastCodeDate", date);
+  }catch(e){
+    elStat.textContent = "상태: 에러 - " + e.message;
   }
-  const riskAmt = acc * (rp/100);
-  const perShare = Math.abs(entry - stop);
-  if (perShare <= 0){
-    out.innerHTML = "<div>손절가는 진입가와 달라야 합니다.</div>";
-    return;
+}
+
+// 복호화 (암호화 코드 → 평문 코드)
+async function decryptCode(){
+  try{
+    if(!elPwd.value){ elStat.textContent = "상태: 비밀번호를 입력해줘"; return; }
+    if(!elEnc.value){ elStat.textContent = "상태: 암호화 코드가 비어있어"; return; }
+    const plain = await decryptText(elEnc.value.trim(), elPwd.value);
+    elPlain.value = plain;
+    elStat.textContent = "상태: 복호화 완료";
+  }catch(e){
+    elStat.textContent = "상태: 복호화 실패 - " + e.message;
   }
-  const shares = Math.floor(riskAmt / perShare);
-  const posAmt = shares * entry;
+}
 
-  out.innerHTML = `
-    <div>허용 리스크 금액: <b>${riskAmt.toLocaleString()}</b></div>
-    <div>1주당 리스크: <b>${perShare.toLocaleString()}</b></div>
-    <div>매수 수량(최대): <b>${shares.toLocaleString()}</b></div>
-    <div>포지션 금액(대략): <b>${posAmt.toLocaleString()}</b></div>
-  `;
-});
-
-/* ========= 평단 ========= */
-$("#avgBtn")?.addEventListener("click", ()=>{
-  const p1 = parseFloat($("#p1").value), q1 = parseFloat($("#q1").value);
-  const p2 = parseFloat($("#p2").value), q2 = parseFloat($("#q2").value);
-  const out = $("#avgResult");
-  if([p1,q1,p2,q2].some(v => !isFinite(v) || v<=0)){
-    out.textContent = "입력값을 확인해줘.";
-    return;
+// 자정(KST 기준 로컬) 자동 새로고침
+function msUntilNextMidnight(){
+  const now = new Date();
+  const next = new Date(now);
+  next.setHours(24,0,0,0); // 로컬 자정
+  return next - now;
+}
+function scheduleMidnightReload(){
+  function updateCountdown(){
+    const ms = msUntilNextMidnight();
+    const sec = Math.floor(ms/1000)%60;
+    const min = Math.floor(ms/1000/60)%60;
+    const hr  = Math.floor(ms/1000/60/60);
+    elMid.textContent = `${String(hr).padStart(2,"0")}:${String(min).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
   }
-  const avg = (p1*q1 + p2*q2) / (q1+q2);
-  out.textContent = "평단가: " + avg.toFixed(4);
-});
+  updateCountdown();
+  setInterval(updateCountdown, 1000);
 
-/* ========= 이벤트 ========= */
-$("#applyBtn")?.addEventListener("click", ()=>{
-  const raw = $("#symbolInput").value;
-  if(!raw) return;
-  setSymbol(raw);
-});
-$("#symbolInput")?.addEventListener("keydown", (e)=>{
-  if(e.key === "Enter"){ $("#applyBtn").click(); }
-});
-$$(".watch-page").forEach(btn=>{
-  btn.addEventListener("click", ()=> setWatchPage(btn));
-});
-$$(".tab-btn").forEach(btn=>{
-  btn.addEventListener("click", ()=> setTab(btn));
-});
+  setTimeout(()=> location.reload(), msUntilNextMidnight() + 500); // 여유 0.5초
+}
 
-/* ========= 초기화 ========= */
-(function init(){
-  mountScreener();
-  mountCalendar();
-  setSymbol(DEFAULT_SYMBOL);
-  renderWatchlist();
+// 버튼 바인딩
+elUse?.addEventListener("click", ()=>{
+  elSym.value = getActiveSymbolText();
+});
+elGen?.addEventListener("click", generateCode);
+elDec?.addEventListener("click", decryptCode);
+
+// 초기값 & 스케줄
+(function initCodeBox(){
+  // 초기 심볼/넘버 자동 채움
+  elSym.value = getActiveSymbolText();
+  if(!elNum.value) elNum.value = "001";
+
+  // 페이지 로드 시 오늘 코드가 없다면 자동 생성 시도 (조용히)
+  generateCode();
+
+  // 자정 리로드 예약
+  scheduleMidnightReload();
 })();
