@@ -1,0 +1,31 @@
+name: Update Stock Data
+
+on:
+  schedule:
+    - cron: "0 15 * * *"   # 한국 자정(00:00), UTC 기준 15시
+  workflow_dispatch:       # 필요하면 깃허브에서 수동 실행도 가능
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run update script
+        run: python update_html.py
+
+      - name: Commit and Push
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add index.html
+          git commit -m "Update stock data" || echo "No changes"
+          git push
