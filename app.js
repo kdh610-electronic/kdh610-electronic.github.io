@@ -1,9 +1,11 @@
 async function loadData() {
-  const res = await fetch("index.html"); // 자기 자신에서 데이터 읽기
+  const res = await fetch("index.html"); // 자기 자신을 불러옴
   const text = await res.text();
 
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(text, "text/html");
+  // 로그 영역에 원본 표시
+  document.getElementById("log-area").textContent = text.match(/📈 Stock Data Log[\s\S]*<\/body>/)[0]
+    .replace("</body>", "")
+    .trim();
 
   const symbols = ["QQQ", "FIG", "KO"];
   const tablesContainer = document.getElementById("tables");
@@ -13,15 +15,17 @@ async function loadData() {
     const startMarker = `<!-- ${symbol} START -->`;
     const endMarker = `<!-- ${symbol} END -->`;
 
+    if (!text.includes(startMarker)) return;
+
     const raw = text.split(startMarker)[1].split(endMarker)[0].trim().split("\n");
     const rows = raw.map(line => {
       const [sym, price, date] = line.split(",");
       return { sym, price: parseFloat(price), date };
     });
 
-    // 📌 테이블 생성
+    // 📊 테이블
     const tableHTML = `
-      <h2>${symbol}</h2>
+      <h3>${symbol}</h3>
       <table>
         <thead><tr><th>Date</th><th>Price</th></tr></thead>
         <tbody>
@@ -31,7 +35,7 @@ async function loadData() {
     `;
     tablesContainer.innerHTML += tableHTML;
 
-    // 📌 차트 생성
+    // 📉 차트
     const canvas = document.createElement("canvas");
     chartsContainer.appendChild(canvas);
 
@@ -51,8 +55,10 @@ async function loadData() {
       options: {
         responsive: true,
         plugins: {
-          legend: { display: true },
-          title: { display: false }
+          legend: { display: true }
+        },
+        scales: {
+          y: { beginAtZero: false }
         }
       }
     });
