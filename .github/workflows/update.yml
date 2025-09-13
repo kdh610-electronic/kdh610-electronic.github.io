@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          fetch-depth: 0   # ✅ 풀 이력 받아오기
+          fetch-depth: 0   # ✅ pull/rebase 위해 전체 히스토리 필요
 
       - name: Set up Python
         uses: actions/setup-python@v4
