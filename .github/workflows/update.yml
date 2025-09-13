@@ -3,10 +3,10 @@ name: Update Stock Data
 on:
   schedule:
     - cron: "0 15 * * *"   # 한국 자정 (UTC 15:00)
-  workflow_dispatch:
+  workflow_dispatch:       # 수동 실행 버튼도 유지
 
 permissions:
-  contents: write
+  contents: write   # github-actions 봇이 푸시할 수 있게 권한 부여
 
 jobs:
   build:
@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          fetch-depth: 0   # ✅ pull/rebase 위해 전체 히스토리 필요
+          fetch-depth: 0   # (옵션) 전체 이력 가져오기
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -28,11 +28,10 @@ jobs:
       - name: Run update script
         run: python update_html.py
 
-      - name: Commit and Push
+      - name: Commit and Push (force overwrite)
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git pull --rebase origin main
           git add index.html
           git commit -m "Update stock data" || echo "No changes"
-          git push origin main
+          git push origin main --force
