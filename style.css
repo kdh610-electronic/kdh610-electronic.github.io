@@ -31,22 +31,30 @@ main {
 
 section {
   margin-bottom: 40px;
+  padding: 15px;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.1);
 }
 
 h2 {
-  margin-top: 40px;
-  font-size: 22px;
+  margin-bottom: 15px;
   color: #7248AE;
+}
+
+pre {
+  background: #222;
+  color: #0f0;
+  padding: 15px;
+  border-radius: 8px;
+  overflow-x: auto;
+  font-size: 14px;
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
   margin: 10px 0;
-  background: white;
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 3px 8px rgba(0,0,0,0.1);
 }
 
 th, td {
@@ -65,12 +73,4 @@ canvas {
   background: white;
   border-radius: 8px;
   box-shadow: 0 3px 8px rgba(0,0,0,0.1);
-}
-
-footer {
-  text-align: center;
-  padding: 15px;
-  font-size: 14px;
-  background: #eee;
-  color: #555;
 }
